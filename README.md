@@ -76,7 +76,7 @@ The web application runs entirely in the browser.
 1.  Open `minip_webapp.html` in your browser.
 2.  Click the **"Start Camera"** button.
 3.  Grant camera permission when prompted.
-4.  The application will start the real-time detection loop, displaying **"PLATE DETECTED ✅"** or **"NO PLATE ❌"** based on the model's prediction of the video stream.
+4.  The application will start the real-time detection loop, displaying **"PLATE = 1"** or **"NO PLATE = 0"** based on the model's prediction of the video stream.
 5.  Click the **"Stop Camera"** button to end the stream.
 
 ---
