@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-Time License Plate Detection</title>
+    <!-- Load Tailwind CSS for modern, responsive styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load TensorFlow.js (required to load the model later) -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.2.0/dist/tf.min.js"></script>
+    <style>
+        /* Custom font */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            transition: background-color 0.3s, color 0.3s;
+            overflow-x: hidden;
+            min-height: 100vh; /* Ensure body covers full height */
+        }
+
+        /* LIGHT MODE (Default) */
+        body {
+            background-color: #f7f7f7;
+            color: #1f2937; /* Gray-800 */
+        }
+        .app-card {
+            background-color: white;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .navbar {
+            background-color: white;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .nav-link.active {
+            color: #4f46e5; /* Indigo-600 */
+            border-bottom: 3px solid #4f46e5;
+        }
+        
+        /* FIX: Ensure all text with this class is DARK BLUE in light mode using !important */
+        .text-black-light {
+             color: #1e3a8a !important; /* Dark Blue (Tailwind blue-900 equivalent) for visibility */
+        }
+
+
+        /* DARK MODE */
+        [data-theme='dark'] body {
+            background-color: #1f2937; /* Dark Gray background */
+            color: #f3f4f6; /* Light Gray text (Base text color) */
+        }
+        [data-theme='dark'] .app-card {
+            background-color: #374151; /* Slightly lighter dark card */
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.2);
+        }
+        [data-theme='dark'] .navbar {
+            background-color: #374151;
+            border-bottom: 1px solid #4b5563;
+        }
+        
+        /* === DARK MODE TEXT OVERRIDES (All primary text is near-white) === */
+        /* This ensures all main content text elements are white in dark mode. */
+        [data-theme='dark'] .text-gray-800,
+        [data-theme='dark'] .text-gray-600,
+        [data-theme='dark'] .text-gray-500,
+        [data-theme='dark'] .text-black-light { /* Override dark blue back to white in dark mode */
+            color: #f3f4f6 !important; /* Force all standard text to near-white */
+        }
+        
+        /* Custom link color for contact links in dark mode */
+        [data-theme='dark'] .contact-link {
+            color: #a5b4fc !important; /* Light indigo for visibility */
+        }
+        
+        [data-theme='dark'] .bg-blue-50 {
+            background-color: #4b5563; /* Darker warning background */
+            border-color: #6b7280;
+        }
+        [data-theme='dark'] .text-blue-700 {
+            color: #93c5fd !important; /* Bright blue text for warning/note, remains distinct */
+        }
+        [data-theme='dark'] code {
+            background-color: #111827; /* Darker code background */
+            color: #9ca3af;
+        }
+        [data-theme='dark'] .nav-link {
+            color: #d1d5db;
+        }
+        [data-theme='dark'] .nav-link.active {
+            color: #a5b4fc; /* Light indigo for active link */
+            border-bottom: 3px solid #a5b4fc;
+        }
+        /* ========================================================== */
+
+        /* Style the video and canvas to be centered and fit content */
+        #video, #canvas {
+            transform: scaleX(-1); /* Flip horizontally for a mirror effect */
+            object-fit: cover;
+            border-radius: 1rem;
+            /* Shadow adjusted by .app-card */
+        }
+
+        /* Hide the canvas but maintain its size for the live detection loop */
+        #canvas {
+            position: absolute;
+            opacity: 0;
+            z-index: -1;
+        }
+        
+        .theme-toggle-button {
+            width: 2.5rem;
+            height: 2.5rem;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        [data-theme='dark'] .theme-toggle-button {
+            background-color: #4b5563;
+        }
+        [data-theme='light'] .theme-toggle-button {
+            background-color: #e5e7eb;
+        }
+    </style>
+</head>
+<body data-theme="light">
+
+    <!-- Navigation Bar -->
+    <nav class="navbar sticky top-0 z-10 w-full">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <!-- Logo/Title -->
+                <div class="flex-shrink-0">
+                    <span class="text-xl font-bold text-indigo-600">LPD Live</span>
+                </div>
+                
+                <!-- Nav Links -->
+                <div class="flex">
+                    <a href="#" onclick="switchView('home-view', this); return false;" id="nav-home" class="nav-link px-3 py-2 text-sm font-medium transition duration-150 active">
+                        Home
+                    </a>
+                    <a href="#" onclick="switchView('about-view', this); return false;" id="nav-about" class="nav-link px-3 py-2 text-sm font-medium transition duration-150">
+                        About
+                    </a>
+                    <a href="#" onclick="switchView('contact-view', this); return false;" id="nav-contact" class="nav-link px-3 py-2 text-sm font-medium transition duration-150">
+                        Contact Us
+                    </a>
+                </div>
+
+                <!-- Theme Toggle Button -->
+                <button id="theme-toggle" class="theme-toggle-button" onclick="toggleTheme()">
+                    <!-- SVG for Moon/Sun - set by JS -->
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content Container -->
+    <div id="content-container" class="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-start p-4 pt-8">
+
+        <!-- HOME VIEW (License Plate Detection) -->
+        <section id="home-view" class="page-view w-full max-w-2xl">
+            <div class="app-card rounded-2xl p-6 md:p-8 space-y-6">
+                <h1 class="text-3xl font-bold text-gray-800 text-center">
+                    Real-Time License Plate Detection
+                </h1>
+                <p class="text-sm text-center text-gray-500">
+                    Click 'Start Camera' to begin. The current algorithm simulates detection.
+                </p>
+                
+                <!-- Video Feed & Results Container -->
+                <div class="relative w-full aspect-video">
+                    <!-- Video Element (User sees this) -->
+                    <video id="video" class="w-full h-full" autoplay playsinline muted></video>
+                    
+                    <!-- Canvas (Used for internal frame processing, hidden) -->
+                    <canvas id="canvas" class="w-full h-full"></canvas>
+
+                    <!-- Status Overlay -->
+                    <div id="detection-overlay" class="absolute inset-0 pointer-events-none">
+                        <!-- Status Message -->
+                        <div id="status-message" class="absolute top-4 left-1/2 transform -translate-x-1/2 px-4 py-2 rounded-full font-semibold text-white shadow-lg transition-all duration-300 bg-gray-500">
+                            Awaiting Camera...
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Controls -->
+                <div class="flex justify-center space-x-4">
+                    <button id="start-button" onclick="startCamera()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-8 rounded-xl transition duration-200 shadow-md active:scale-95 disabled:bg-gray-400">
+                        Start Camera
+                    </button>
+                    <button id="stop-button" onclick="stopCamera()" class="bg-red-500 hover:bg-red-600 text-white font-semibold py-3 px-8 rounded-xl transition duration-200 shadow-md active:scale-95" disabled>
+                        Stop Camera
+                    </button>
+                </div>
+            </div>
+        </section> <!-- End Home View -->
+
+
+        <!-- ABOUT VIEW -->
+        <section id="about-view" class="page-view w-full max-w-2xl hidden">
+            <div class="app-card rounded-2xl p-8 space-y-6">
+                <h2 class="text-2xl font-bold text-gray-800 border-b pb-2">About This Project</h2>
+                <p class="text-gray-600">
+                    This application is designed to demonstrate **real-time license plate presence detection** using a webcam feed directly within a web browser. The primary goal is to show the feasibility of deploying machine learning models on the edge (the user's device).
+                </p>
+                <h3 class="text-xl font-semibold mt-4">Technology Used</h3>
+                <ul class="list-disc list-inside space-y-2 text-gray-600">
+                    <li>**HTML5 & JavaScript:** Used for structure and core logic.</li>
+                    <li>**Python:** The primary language used for training the original detection model (`plate_classifier_mobilenetv2.h5`).</li>
+                    <li>**Tailwind CSS:** Provides the responsive and aesthetic styling for both light and dark modes.</li>
+                    <li>**WebRTC:** Enables camera access for the live video stream.</li>
+                    <li>**TensorFlow.js (TF.js):** The framework intended for running the converted MobilenetV2 model for actual detection (currently simulated, awaiting model conversion).</li>
+                </ul>
+                <p class="text-sm italic text-gray-500 mt-6">
+                    Note: Due to environment limitations, the actual detection logic is currently simulated to ensure the camera and UI features work seamlessly. Once the `plate_classifier_mobilenetv2.h5` model is converted to TF.js format and hosted, it can be easily integrated using the provided code comments.
+                </p>
+            </div>
+        </section> <!-- End About View -->
+
+
+        <!-- CONTACT US VIEW -->
+        <section id="contact-view" class="page-view w-full max-w-2xl hidden">
+            <div class="app-card rounded-2xl p-8 space-y-6">
+                <h2 class="text-2xl font-bold text-gray-800 border-b pb-2">Contact Our Team</h2>
+                <p class="text-gray-600">
+                    Feel free reach out or connect with us.
+                </p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
+                    <!-- Team Member 1 (Bushra Farhad) -->
+                    <div class="flex items-center space-x-4 p-4 rounded-xl border border-gray-200 dark:border-gray-600">
+                        <svg class="w-8 h-8 text-indigo-600 dark:text-indigo-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268a1.732 1.732 0 1 1 0-3.464 1.732 1.732 0 0 1 0 3.464zm13.5 12.268h-3v-5.604c0-3.368-4-3.543-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
+                        </svg>
+                        <div>
+                            <!-- Uses text-black-light class, which is now dark blue in light mode -->
+                            <p class="font-semibold text-black-light dark:text-white">Bushra Farhad</p>
+                            <a href="https://www.linkedin.com/in/bushra-farhad-518a52245/" target="_blank" class="text-sm text-indigo-600 hover:underline contact-link">linkedin.com/in/bushra-farhad-518a52245/</a>
+                        </div>
+                    </div>
+                    <!-- Team Member 2 (Sahil Pasalkar) -->
+                    <div class="flex items-center space-x-4 p-4 rounded-xl border border-gray-200 dark:border-gray-600">
+                        <svg class="w-8 h-8 text-indigo-600 dark:text-indigo-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268a1.732 1.732 0 1 1 0-3.464 1.732 1.732 0 0 1 0 3.464zm13.5 12.268h-3v-5.604c0-3.368-4-3.543-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
+                        </svg>
+                        <div>
+                            <!-- Uses text-black-light class, which is now dark blue in light mode -->
+                            <p class="font-semibold text-black-light dark:text-white">Sahil Pasalkar</p>
+                            <a href="https://www.linkedin.com/in/sahil-pasalkar-5690ba307/" target="_blank" class="text-sm text-indigo-600 hover:underline contact-link">linkedin.com/in/sahil-pasalkar-5690ba307/</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section> <!-- End Contact View -->
+
+    </div> <!-- End Main Content Container -->
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const context = canvas.getContext('2d', { willReadFrequently: true });
+        const startButton = document.getElementById('start-button');
+        const stopButton = document.getElementById('stop-button');
+        const statusMessage = document.getElementById('status-message');
+        const body = document.body;
+        const themeToggleButton = document.getElementById('theme-toggle');
+        
+        let stream = null;
+        let animationFrameId = null;
+        let isProcessing = false;
+
+        // --- View Management ---
+
+        /**
+         * Switches the active content view and updates the navigation link styling.
+         * Stops the camera if switching away from the Home view.
+         * @param {string} viewId - The ID of the view to show (e.g., 'home-view').
+         * @param {HTMLElement} clickedElement - The navigation link that was clicked.
+         */
+        function switchView(viewId, clickedElement) {
+            // Hide all views
+            document.querySelectorAll('.page-view').forEach(view => {
+                view.classList.add('hidden');
+            });
+            // Remove active class from all links
+            document.querySelectorAll('.nav-link').forEach(link => {
+                link.classList.remove('active');
+            });
+
+            // Show the selected view
+            document.getElementById(viewId).classList.remove('hidden');
+            
+            // Set the active class on the clicked link
+            clickedElement.classList.add('active');
+
+            // If switching away from home view, stop the camera
+            if (viewId !== 'home-view' && isProcessing) {
+                stopCamera();
+            }
+        }
+
+
+        // --- Theme Management ---
+        const MOON_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6 text-gray-900 dark:text-gray-100"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>';
+        const SUN_ICON = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6 text-gray-900 dark:text-gray-100"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>';
+
+        function setInitialTheme() {
+            const savedTheme = localStorage.getItem('theme');
+            const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            let theme = 'light';
+
+            if (savedTheme) {
+                theme = savedTheme;
+            } else if (systemPrefersDark) {
+                theme = 'dark';
+            }
+
+            applyTheme(theme);
+        }
+
+        function applyTheme(theme) {
+            body.setAttribute('data-theme', theme);
+            localStorage.setItem('theme', theme);
+            themeToggleButton.innerHTML = theme === 'dark' ? SUN_ICON : MOON_ICON;
+        }
+
+        function toggleTheme() {
+            const currentTheme = body.getAttribute('data-theme');
+            const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+            applyTheme(newTheme);
+        }
+        
+        // --- TensorFlow.js Model Integration (Currently Commented Out) ---
+        // let tfjsModel = null;
+        // const MODEL_URL = 'http://your-server.com/tfjs_model/model.json'; // CHANGE THIS URL
+        // const INPUT_SIZE = [224, 224]; 
+        
+        /*
+        async function loadTFJSModel() {
+             updateStatus("Loading ML Model...", 'bg-yellow-600');
+             try {
+                 tfjsModel = await tf.loadLayersModel(MODEL_URL);
+                 updateStatus("Model Loaded. Ready to start.", 'bg-gray-500');
+                 console.log("TensorFlow.js Model Loaded Successfully.");
+             } catch (error) {
+                 console.error("Failed to load TensorFlow.js model:", error);
+                 updateStatus("Model Loading FAILED. Using simulation.", 'bg-red-700');
+             }
+        }
+        */
+
+        // --- Camera Control ---
+
+        function updateStatus(text, bgColor = 'bg-gray-500') {
+            statusMessage.textContent = text;
+            // Update the class list by removing previous color and adding the new one
+            statusMessage.className = `absolute top-4 left-1/2 transform -translate-x-1/2 px-4 py-2 rounded-full font-semibold text-white shadow-lg transition-all duration-300 ${bgColor}`;
+        }
+
+        async function startCamera() {
+            if (isProcessing) return;
+
+            updateStatus("Starting Camera...", 'bg-indigo-500');
+            
+            /* // 1. Uncomment this line to load the TF.js model before starting the camera
+            // if (!tfjsModel) await loadTFJSModel(); 
+            */
+
+            try {
+                // Request access to the user's camera
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: 'environment' }, // Prefer rear camera on mobile
+                    audio: false 
+                });
+                
+                video.srcObject = stream;
+                
+                // Once the video metadata is loaded, set canvas dimensions
+                video.onloadedmetadata = () => {
+                    video.play();
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    
+                    startButton.disabled = true;
+                    stopButton.disabled = false;
+                    isProcessing = true;
+                    updateStatus("Camera Active", 'bg-green-500');
+                    
+                    // Start the real-time processing loop
+                    animationFrameId = requestAnimationFrame(processLoop);
+                };
+
+            } catch (err) {
+                console.error("Error accessing the camera: ", err);
+                updateStatus("Camera access denied or failed.", 'bg-red-600');
+                startButton.disabled = false;
+                stopButton.disabled = true;
+            }
+        }
+
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+            video.srcObject = null;
+            isProcessing = false;
+            startButton.disabled = false;
+            stopButton.disabled = true;
+            updateStatus("Camera Stopped", 'bg-gray-500');
+            
+            // Restore initial overlay message
+            document.getElementById('detection-overlay').innerHTML = `
+                <div id="status-message" class="absolute top-4 left-1/2 transform -translate-x-1/2 px-4 py-2 rounded-full font-semibold text-white shadow-lg bg-gray-500 transition-all duration-300">
+                    Awaiting Camera...
+                </div>`;
+        }
+
+
+        // --- Simulation Detection Logic (Runs by default) ---
+        function detectPlate(width, height) {
+            
+            /*
+            // 2. Uncomment this block to use the loaded TF.js model for prediction:
+            if (tfjsModel) {
+                // ... (TF.js prediction logic goes here, as detailed in the comments above)
+                // ...
+                const found = confidence > 0.5; // Example threshold check
+                return { 
+                    found: found, 
+                    box: [x1, y1, x2, y2],
+                    confidence: confidence,
+                    label: found ? "PLATE = 1" : "PLATE = 0"
+                };
+            }
+            */
+
+            // --- Default Simulation Logic ---
+            // Toggles between PLATE=1 and PLATE=0 every 5 seconds for visual effect
+            if (Date.now() % 5000 > 1000) { 
+                return { 
+                    found: true, 
+                    box: [0, 0, width, height], // Placeholder box
+                    confidence: 0.95,
+                    label: "PLATE = 1" 
+                };
+            } else {
+                 return { 
+                    found: false, 
+                    box: [0, 0, width, height], // Placeholder box
+                    confidence: 0.10,
+                    label: "PLATE = 0" 
+                };
+            }
+        }
+
+        // --- Real-Time Processing Loop ---
+        
+        function processLoop() {
+            if (video.paused || video.ended || !isProcessing) {
+                return;
+            }
+
+            const { videoWidth, videoHeight } = video;
+            if (videoWidth === 0 || videoHeight === 0) {
+                animationFrameId = requestAnimationFrame(processLoop);
+                return;
+            }
+
+            // Draw the current video frame onto the hidden canvas
+            context.drawImage(video, 0, 0, videoWidth, videoHeight);
+
+            // Run detection logic
+            const result = detectPlate(videoWidth, videoHeight);
+
+            // Update the UI
+            updateOverlay(result);
+
+            // Request the next frame
+            animationFrameId = requestAnimationFrame(processLoop);
+        }
+
+        /**
+         * Updates the detection status message without drawing a bounding box.
+         */
+        function updateOverlay(result) {
+            
+            // Use the label (PLATE = 1 or PLATE = 0) and color
+            const statusLabel = result.label;
+            const bgColor = result.found ? 'bg-green-600' : 'bg-red-600';
+
+            // Find the existing status message div
+            const existingMessage = document.getElementById('status-message');
+            
+            // Update content and class directly
+            existingMessage.textContent = statusLabel;
+            existingMessage.className = `absolute top-4 left-1/2 transform -translate-x-1/2 px-4 py-2 rounded-full font-semibold text-white shadow-lg transition-all duration-300 ${bgColor}`;
+        }
+
+        // Initialize button states, theme, and view on window load
+        window.onload = () => {
+            stopButton.disabled = true;
+            setInitialTheme();
+            
+            // Ensure the Home view is active on load
+            switchView('home-view', document.getElementById('nav-home'));
+            
+            /* // 3. Optional: Uncomment this line to attempt to load the model on page load
+            // loadTFJSModel(); 
+            */
+        }
+        
+    </script>
+</body>
+</html>
