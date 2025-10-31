@@ -89,3 +89,15 @@ This project was developed by:
 * **Sahil Pasalkar:** [linkedin.com/in/sahil-pasalkar-5690ba307/](https://www.linkedin.com/in/sahil-pasalkar-5690ba307/)
 
 Feel free to connect or reach out with any questions!
+
+## Future Enhancements
+
+- Integrate the trained TF.js model for real-time plate detection
+- Add bounding box drawing in live view
+- Extend model for OCR (Optical Character Recognition) to extract license numbers
+- Deploy web app using GitHub Pages or Streamlit Cloud
+
+## License
+
+This project is released under the MIT License.
+Feel free to use, modify, and share with proper attribution.
