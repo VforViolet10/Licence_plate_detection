@@ -86,7 +86,6 @@ The web application runs entirely in the browser.
 This project was developed by:
 
 * **Bushra Farhad:** [linkedin.com/in/bushra-farhad-518a52245/](https://www.linkedin.com/in/bushra-farhad-518a52245/)
-* **Sahil Pasalkar:** [linkedin.com/in/sahil-pasalkar-5690ba307/](https://www.linkedin.com/in/sahil-pasalkar-5690ba307/)
 
 Feel free to connect or reach out with any questions!
 
